@@ -1,10 +1,8 @@
-
-from __future__ import print_function
-
 import pandas as pd
 import numpy  as np
 import matplotlib.pyplot as plt
-
+import tensorflow as tf
+from tensorflow import keras
 
 import math
 
@@ -14,68 +12,26 @@ from matplotlib import gridspec
 
 
 from sklearn import metrics
-import tensorflow as tf
 from tensorflow.python.data import Dataset
 
-pd.__version__
-#The primary data structures in pandas are implemented as two classes:
-#DataFrame, which you can imagine as a relational data table, with rows and named columns.
-# Series, which is a single column. A DataFrame contains one or more Series and a name for each Series.
 
 
-#Series
-input = pd.Series(['San Francisco', 'San Jose', 'Sacramento'])
-print(input)
+fixed_df = pd.read_csv('/home/matt/Documents/AI-based-Text-Classification/2010_Census_Populations_by_Zip_Code.csv', sep=",")
 
-# create some Series, map them to data DataFrame
 
-city_names = pd.Series(['San Francisco', 'San Jose', 'Sacramento'])
-population = pd.Series([852469, 1015785, 485199])
+# print(fixed_df.describe())
+#
+# print(fixed_df.head())
 
-pd.DataFrame({ 'City name': city_names, 'Population': population })
-
-# load file into DataFrame
-california_housing_dataframe = pd.read_csv("california_housing_train.csv", sep=",")
-# describe shows interesting statistics about the datasets
-california_housing_dataframe.describe()
-
-# shows first few records
-california_housing_dataframe.head()
-
-# create a graph with the housing housing_median_age data
-california_housing_dataframe.hist('housing_median_age')
-
-cities = pd.DataFrame({ 'City name': city_names, 'Population': population })
-print(type(cities['City name']))
-cities['City name']
-print(cities['City name'])
-
-print(type(cities['City name'][1]))
-cities['City name'][1]
-
-# you can use basic arithmetic to Series
-print(population / 100)
-
-#Series can be used as agruments in numpy
-np.log(population)
-
-# creates a Series that tells if population is over 1 mill
-population.apply(lambda val: val > 1000000)
-
-#modify data frames, addes two Series to an existing DataFrame
-cities['Area square miles'] = pd.Series([46.87, 176.53, 97.92])
-cities['Population density'] = cities['Population'] / cities['Area square miles']
-
-print('lets build shit')
 tf.logging.set_verbosity(tf.logging.ERROR)
 pd.options.display.max_rows = 10
 pd.options.display.float_format = '{:.1f}'.format
 
-california_housing_dataframe = california_housing_dataframe.reindex(
-    np.random.permutation(california_housing_dataframe.index))
+fixed_df = fixed_df.reindex(
+    np.random.permutation(fixed_df.index))
 
 #build features
-def preprocess_features(california_housing_dataframe):
+def preprocess_features(fixed_df):
   """Prepares input features from California housing data set.
 
   Args:
@@ -85,25 +41,24 @@ def preprocess_features(california_housing_dataframe):
     A DataFrame that contains the features to be used for the model, including
     synthetic features.
   """
-  selected_features = california_housing_dataframe[
-    ["latitude",
-     "longitude",
-     "housing_median_age",
-     "total_rooms",
-     "total_bedrooms",
-     "population",
+  # add all columns except label
+  selected_features = fixed_df[
+    ["Average Household Size",
+     "Total Population",
+     "Total Males",
+     "Total Females",
      "households",
-     "median_income"]]
+     "Zip Code"
+     ]]
   processed_features = selected_features.copy()
   # Create a synthetic feature.
-  processed_features["rooms_per_person"] = (
-    california_housing_dataframe["total_rooms"] /
-    california_housing_dataframe["population"])
+  processed_features["males_per_household"] = (
+    fixed_df["Total Males"] /
+    fixed_df["households"])
   return processed_features
 
-
 #build targets
-def preprocess_targets(california_housing_dataframe):
+def preprocess_targets(fixed_df):
   """Prepares target features (i.e., labels) from California housing data set.
 
   Args:
@@ -114,18 +69,15 @@ def preprocess_targets(california_housing_dataframe):
   """
   output_targets = pd.DataFrame()
   # Scale the target to be in units of thousands of dollars.
-  output_targets["median_house_value"] = (
-    california_housing_dataframe["median_house_value"] / 1000.0)
+  output_targets["Median Age"] = (
+    fixed_df["Median Age"])
   return output_targets
 
+training_examples = preprocess_features(fixed_df.head(200))
+training_targets = preprocess_targets(fixed_df.head(200))
 
-# Choose the first 12000 (out of 17000) examples for training.
-training_examples = preprocess_features(california_housing_dataframe.head(12000))
-training_targets = preprocess_targets(california_housing_dataframe.head(12000))
-
-# Choose the last 5000 (out of 17000) examples for validation.
-validation_examples = preprocess_features(california_housing_dataframe.tail(5000))
-validation_targets = preprocess_targets(california_housing_dataframe.tail(5000))
+validation_examples = preprocess_features(fixed_df.tail(120))
+validation_targets = preprocess_targets(fixed_df.tail(120))
 
 # Double-check that we've done the right thing.
 print("Training examples summary:")
@@ -138,15 +90,14 @@ display.display(training_targets.describe())
 print("Validation targets summary:")
 display.display(validation_targets.describe())
 
-#building feature set
+#**** Feature Set **********
 
 #A **correlation matrix** shows pairwise correlations, both for each feature compared to the target and for each feature compared to other features.
 # -1 perfect negative correlation 0 no correlation 1 perfect positive correlation
 correlation_dataframe = training_examples.copy()
-correlation_dataframe["target"] = training_targets["median_house_value"]
+correlation_dataframe["target"] = training_targets["Median Age"]
 
 correlation_dataframe.corr()
-
 
 def construct_feature_columns(input_features):
   """Construct the TensorFlow Feature Columns.
@@ -186,6 +137,7 @@ def my_input_fn(features, targets, batch_size=1, shuffle=True, num_epochs=None):
     # Return the next batch of data.
     features, labels = ds.make_one_shot_iterator().get_next()
     return features, labels
+
 
 def train_model(
     learning_rate,
@@ -231,14 +183,14 @@ def train_model(
 
   # Create input functions.
   training_input_fn = lambda: my_input_fn(training_examples,
-                                          training_targets["median_house_value"],
+                                          training_targets["Median Age"],
                                           batch_size=batch_size)
   predict_training_input_fn = lambda: my_input_fn(training_examples,
-                                                  training_targets["median_house_value"],
+                                                  training_targets["Median Age"],
                                                   num_epochs=1,
                                                   shuffle=False)
   predict_validation_input_fn = lambda: my_input_fn(validation_examples,
-                                                    validation_targets["median_house_value"],
+                                                    validation_targets["Median Age"],
                                                     num_epochs=1,
                                                     shuffle=False)
 
@@ -289,8 +241,8 @@ def train_model(
   return linear_regressor
 
 minimal_features = [
-  "median_income",
-  "latitude",
+  "Total Males",
+  "households"
 ]
 
 minimal_training_examples = training_examples[minimal_features]
@@ -304,3 +256,16 @@ _ = train_model(
     training_targets=training_targets,
     validation_examples=minimal_validation_examples,
     validation_targets=validation_targets)
+
+
+# fixed_df['Average Household Size'].plot()
+#
+# plt.title('Average Number Of People Per Household')
+# plt.xlabel('Zip codes')
+# plt.ylabel('Number of people')
+# plt.legend()
+#
+# plt.show()
+#
+#
+# print(fixed_df['Average Household Size'][:5])
