@@ -1,37 +1,34 @@
-import pandas as pd
-import numpy  as np
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow import keras
+from __future__ import print_function
 
 import math
 
 from IPython import display
 from matplotlib import cm
 from matplotlib import gridspec
-
-
+from matplotlib import pyplot as plt
+import numpy as np
+import pandas as pd
 from sklearn import metrics
+import tensorflow as tf
 from tensorflow.python.data import Dataset
-
-
-
-fixed_df = pd.read_csv('/home/matt/Documents/AI-based-Text-Classification/2010_Census_Populations_by_Zip_Code.csv', sep=",")
-
-
-# print(fixed_df.describe())
-#
-# print(fixed_df.head())
 
 tf.logging.set_verbosity(tf.logging.ERROR)
 pd.options.display.max_rows = 10
 pd.options.display.float_format = '{:.1f}'.format
 
-fixed_df = fixed_df.reindex(
-    np.random.permutation(fixed_df.index))
 
-#build features
-def preprocess_features(fixed_df):
+diamonds_df = pd.read_csv('/home/matt/Documents/AI-based-Text-Classification/diamonds.csv', sep=",")
+diamonds_df = diamonds_df.reindex(
+    np.random.permutation(diamonds_df.index))
+
+# describe shows interesting statistics about the datasets
+print(diamonds_df.describe())
+
+# shows first few records
+#print(census_dataframe.head())
+
+# Predict Calories
+def preprocess_features(diamonds_df):
   """Prepares input features from California housing data set.
 
   Args:
@@ -41,45 +38,43 @@ def preprocess_features(fixed_df):
     A DataFrame that contains the features to be used for the model, including
     synthetic features.
   """
-  # add all columns except label
-  selected_features = fixed_df[
-    ["Average Household Size",
-     "Total Population",
-     "Total Males",
-     "Total Females",
-     "households",
-     "Zip Code"
-     ]]
+  selected_features = diamonds_df[
+    ["carat","depth","table","x","y","z"]]
   processed_features = selected_features.copy()
   # Create a synthetic feature.
-  processed_features["males_per_household"] = (
-    fixed_df["Total Males"] /
-    fixed_df["households"])
+  processed_features["size"] = (
+    diamonds_df["x"] * diamonds_df["y"] * diamonds_df["z"])
   return processed_features
 
-#build targets
-def preprocess_targets(fixed_df):
-  """Prepares target features (i.e., labels) from California housing data set.
 
-  Args:
-    california_housing_dataframe: A Pandas DataFrame expected to contain data
-      from the California housing data set.
-  Returns:
-    A DataFrame that contains the target feature.
-  """
-  output_targets = pd.DataFrame()
-  # Scale the target to be in units of thousands of dollars.
-  output_targets["Median Age"] = (
-    fixed_df["Median Age"])
-  return output_targets
+def preprocess_targets(diamonds_df):
+    """Prepares target features (i.e., labels) from California housing data set.
 
-training_examples = preprocess_features(fixed_df.head(200))
-training_targets = preprocess_targets(fixed_df.head(200))
+    Args:
+      california_housing_dataframe: A Pandas DataFrame expected to contain data
+        from the California housing data set.
+    Returns:
+      A DataFrame that contains the target feature.
+    """
+    output_targets = pd.DataFrame()
+    # Scale the target to be in units of thousands of dollars.
+    output_targets["price"] = (
+      diamonds_df["price"])
+    return output_targets
 
-validation_examples = preprocess_features(fixed_df.tail(120))
-validation_targets = preprocess_targets(fixed_df.tail(120))
+diamonds_df["carat"] = (
+    diamonds_df["carat"]).apply(lambda x: min(x, 3.5))
 
-# Double-check that we've done the right thing.
+diamonds_df["x"] = (
+    diamonds_df["x"]).apply(lambda x: max(x, 3))
+
+training_examples = preprocess_features(diamonds_df.head(37758))
+training_targets = preprocess_targets(diamonds_df.head(37758))
+
+validation_examples = preprocess_features(diamonds_df.tail(8091))
+validation_targets = preprocess_targets(diamonds_df.tail(8091))
+
+
 print("Training examples summary:")
 display.display(training_examples.describe())
 print("Validation examples summary:")
@@ -90,14 +85,7 @@ display.display(training_targets.describe())
 print("Validation targets summary:")
 display.display(validation_targets.describe())
 
-#**** Feature Set **********
 
-#A **correlation matrix** shows pairwise correlations, both for each feature compared to the target and for each feature compared to other features.
-# -1 perfect negative correlation 0 no correlation 1 perfect positive correlation
-correlation_dataframe = training_examples.copy()
-correlation_dataframe["target"] = training_targets["Median Age"]
-
-correlation_dataframe.corr()
 
 def construct_feature_columns(input_features):
   """Construct the TensorFlow Feature Columns.
@@ -106,6 +94,8 @@ def construct_feature_columns(input_features):
     input_features: The names of the numerical input features to use.
   Returns:
     A set of feature columns
+
+
   """
   return set([tf.feature_column.numeric_column(my_feature)
               for my_feature in input_features])
@@ -138,11 +128,11 @@ def my_input_fn(features, targets, batch_size=1, shuffle=True, num_epochs=None):
     features, labels = ds.make_one_shot_iterator().get_next()
     return features, labels
 
-
 def train_model(
     learning_rate,
     steps,
     batch_size,
+    feature_columns,
     training_examples,
     training_targets,
     validation_examples,
@@ -156,7 +146,7 @@ def train_model(
     learning_rate: A `float`, the learning rate.
     steps: A non-zero `int`, the total number of training steps. A training step
       consists of a forward and backward pass using a single batch.
-    batch_size: A non-zero `int`, the batch size.
+    feature_columns: A `set` specifying the input feature columns to use.
     training_examples: A `DataFrame` containing one or more columns from
       `california_housing_dataframe` to use as input features for training.
     training_targets: A `DataFrame` containing exactly one column from
@@ -174,23 +164,22 @@ def train_model(
   steps_per_period = steps / periods
 
   # Create a linear regressor object.
-  my_optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+  my_optimizer = tf.train.FtrlOptimizer(learning_rate=learning_rate)
   my_optimizer = tf.contrib.estimator.clip_gradients_by_norm(my_optimizer, 5.0)
   linear_regressor = tf.estimator.LinearRegressor(
-      feature_columns=construct_feature_columns(training_examples),
+      feature_columns=feature_columns,
       optimizer=my_optimizer
   )
 
-  # Create input functions.
   training_input_fn = lambda: my_input_fn(training_examples,
-                                          training_targets["Median Age"],
+                                          training_targets["price"],
                                           batch_size=batch_size)
   predict_training_input_fn = lambda: my_input_fn(training_examples,
-                                                  training_targets["Median Age"],
+                                                  training_targets["price"],
                                                   num_epochs=1,
                                                   shuffle=False)
   predict_validation_input_fn = lambda: my_input_fn(validation_examples,
-                                                    validation_targets["Median Age"],
+                                                    validation_targets["price"],
                                                     num_epochs=1,
                                                     shuffle=False)
 
@@ -204,12 +193,11 @@ def train_model(
     # Train the model, starting from the prior state.
     linear_regressor.train(
         input_fn=training_input_fn,
-        steps=steps_per_period,
+        steps=steps_per_period
     )
     # Take a break and compute predictions.
     training_predictions = linear_regressor.predict(input_fn=predict_training_input_fn)
     training_predictions = np.array([item['predictions'][0] for item in training_predictions])
-
     validation_predictions = linear_regressor.predict(input_fn=predict_validation_input_fn)
     validation_predictions = np.array([item['predictions'][0] for item in validation_predictions])
 
@@ -223,49 +211,61 @@ def train_model(
     # Add the loss metrics from this period to our list.
     training_rmse.append(training_root_mean_squared_error)
     validation_rmse.append(validation_root_mean_squared_error)
+    print("Training RMSE " + str(training_root_mean_squared_error))
+    print ("Validation RMSE " + str(validation_root_mean_squared_error))
+
   print("Model training finished.")
 
 
   # Output a graph of loss metrics over periods.
-
   plt.ylabel("RMSE")
   plt.xlabel("Periods")
   plt.title("Root Mean Squared Error vs. Periods")
   plt.tight_layout()
   plt.plot(training_rmse, label="training")
   plt.plot(validation_rmse, label="validation")
-
   plt.legend()
   plt.show()
 
   return linear_regressor
 
-minimal_features = [
-  "Total Males",
-  "households"
-]
-
-minimal_training_examples = training_examples[minimal_features]
-minimal_validation_examples = validation_examples[minimal_features]
 
 _ = train_model(
-    learning_rate=0.01,
-    steps=500,
-    batch_size=5,
-    training_examples=minimal_training_examples,
+    learning_rate=1.3,
+    steps=750,
+    batch_size=100,
+    feature_columns=construct_feature_columns(training_examples),
+    training_examples=training_examples,
     training_targets=training_targets,
-    validation_examples=minimal_validation_examples,
+    validation_examples=validation_examples,
     validation_targets=validation_targets)
+#
+# x =0
+# for item in diamonds_df["price"]:
+#     if item < 500:
+#         x = x+1
 
 
-# fixed_df['Average Household Size'].plot()
-#
-# plt.title('Average Number Of People Per Household')
-# plt.xlabel('Zip codes')
-# plt.ylabel('Number of people')
-# plt.legend()
-#
-# plt.show()
-#
-#
-# print(fixed_df['Average Household Size'][:5])
+# print("under " + str(x))
+
+plt.figure(figsize=(15, 6))
+plt.subplot(1, 2, 1)
+plt.ylabel("Price")
+plt.xlabel("Carat")
+plt.scatter(diamonds_df["carat"], diamonds_df["price"])
+
+
+plt.figure(figsize=(15, 6))
+plt.subplot(1, 2, 1)
+plt.ylabel("Price")
+plt.xlabel("X")
+plt.scatter(diamonds_df["x"], diamonds_df["price"])
+plt.show()
+
+min_price_value = diamonds_df["price"].min()
+max_price_value = diamonds_df["price"].max()
+min_max_difference = max_price_value - min_price_value
+
+print("Min. Price Value: %0.3f" % min_price_value)
+print("Max. Price Value: %0.3f" % max_price_value)
+print("Difference between Min. and Max.: %0.3f" % min_max_difference)
