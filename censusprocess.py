@@ -38,12 +38,14 @@ def preprocess_features(diamonds_df):
     A DataFrame that contains the features to be used for the model, including
     synthetic features.
   """
+  diamonds_df["size"] = (
+    diamonds_df["x"] * diamonds_df["y"] * diamonds_df["z"])
   selected_features = diamonds_df[
-    ["carat","depth","table","x","y","z"]]
+    ["carat","depth","table","size"]]
   processed_features = selected_features.copy()
   # Create a synthetic feature.
-  processed_features["size"] = (
-    diamonds_df["x"] * diamonds_df["y"] * diamonds_df["z"])
+  # processed_features["size"] = (
+  #   diamonds_df["x"] * diamonds_df["y"] * diamonds_df["z"])
   return processed_features
 
 
