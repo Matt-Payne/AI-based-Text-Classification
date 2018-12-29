@@ -7,7 +7,7 @@ import random
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-
+import tensorflow as tf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import f_classif
@@ -80,6 +80,35 @@ def load_imdb_sentiment_analysis_dataset(data_path, seed=123):
 
     return ((train_texts, np.array(train_labels)),
             (test_texts, np.array(test_labels)))
+
+
+def get_num_classes(labels):
+    """Gets the total number of classes.
+    # Arguments
+        labels: list, label values.
+            There should be at lease one sample for values in the
+            range (0, num_classes -1)
+    # Returns
+        int, total number of classes.
+    # Raises
+        ValueError: if any label value in the range(0, num_classes - 1)
+            is missing or if number of classes is <= 1.
+    """
+    num_classes = max(labels) + 1
+    missing_classes = [i for i in range(num_classes) if i not in labels]
+    if len(missing_classes):
+        raise ValueError('Missing samples with label value(s) '
+                         '{missing_classes}. Please make sure you have '
+                         'at least one sample for every label value '
+                         'in the range(0, {max_class})'.format(
+                            missing_classes=missing_classes,
+                            max_class=num_classes - 1))
+
+    if num_classes <= 1:
+        raise ValueError('Invalid number of labels: {num_classes}.'
+                         'Please make sure there are at least two classes '
+                         'of samples'.format(num_classes=num_classes))
+    return num_classes
 
 
 def get_num_words_per_sample(sample_texts):
@@ -364,7 +393,7 @@ def train_ngram_model(data,
     (train_texts, train_labels), (val_texts, val_labels) = data
 
     # Verify that validation labels are in the same range as training labels.
-    num_classes = explore_data.get_num_classes(train_labels)
+    num_classes = get_num_classes(train_labels)
     unexpected_labels = [v for v in val_labels if v not in range(num_classes)]
     if len(unexpected_labels):
         raise ValueError('Unexpected label values found in the validation set:'
@@ -374,11 +403,11 @@ def train_ngram_model(data,
                              unexpected_labels=unexpected_labels))
 
     # Vectorize texts.
-    x_train, x_val = vectorize_data.ngram_vectorize(
+    x_train, x_val = ngram_vectorize(
         train_texts, train_labels, val_texts)
 
     # Create model instance.
-    model = build_model.mlp_model(layers=layers,
+    model = mlp_model(layers=layers,
                                   units=units,
                                   dropout_rate=dropout_rate,
                                   input_shape=x_train.shape[1:],
@@ -417,3 +446,5 @@ def train_ngram_model(data,
     return history['val_acc'][-1], history['val_loss'][-1]
 
 #Learning rate - rate at which the network weights change between iterations
+data = load_imdb_sentiment_analysis_dataset("/home/matt/Documents/AI-based-Text-Classification/")
+train_ngram_model(data)
