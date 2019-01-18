@@ -76,5 +76,5 @@ if __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     # Using the IMDb movie reviews dataset to demonstrate training n-gram model
-    data = load_data.load_imdb_sentiment_analysis_dataset(FLAGS.data_dir)
+    data = load_data.load_imdb_sentiment_analysis_dataset("/home/matt/Documents/AI-based-Text-Classification/")
     tune_ngram_model(data)
